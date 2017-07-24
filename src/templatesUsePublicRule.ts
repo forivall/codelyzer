@@ -6,6 +6,7 @@ import {NgWalker} from './angular/ngWalker';
 import {RecursiveAngularExpressionVisitor} from './angular/templates/recursiveAngularExpressionVisitor';
 import * as e from '@angular/compiler/src/expression_parser/ast';
 import SyntaxKind = require('./util/syntaxKind');
+import { IOptions } from 'tslint';
 
 enum DeclarationType {
   Property,
@@ -13,6 +14,20 @@ enum DeclarationType {
 }
 
 class SymbolAccessValidator extends RecursiveAngularExpressionVisitor {
+  private allowProtected: boolean = false;
+
+  constructor(sourceFile, options: IOptions, context, basePosition) {
+    super(sourceFile, options, context, basePosition);
+
+    let args = options.ruleArguments;
+    if (!(args instanceof Array)) {
+      args = [args];
+    }
+    if (args[0] === 'protected') {
+      this.allowProtected = true;
+    }
+  }
+
   visitPropertyRead(ast: e.PropertyRead, context: any): any {
     return this.doCheck(ast, DeclarationType.Property, context);
   }
@@ -43,7 +58,9 @@ class SymbolAccessValidator extends RecursiveAngularExpressionVisitor {
     const member = allMembers.filter((m: any) => m.name && m.name.text === ast.name).pop();
     if (member) {
       let isPublic = !member.modifiers || !member.modifiers
-        .some(m => m.kind === SyntaxKind.current().PrivateKeyword || m.kind === SyntaxKind.current().ProtectedKeyword);
+        .some(this.allowProtected ?
+          m => m.kind === SyntaxKind.current().PrivateKeyword :
+          m => m.kind === SyntaxKind.current().PrivateKeyword || m.kind === SyntaxKind.current().ProtectedKeyword);
       const width = ast.name.length;
       if (!isPublic) {
         const failureString = `You can bind only to public class members. "${member.name.getText()}" is not a public class member.`;
@@ -84,8 +101,13 @@ export class Rule extends Lint.Rules.AbstractRule {
     type: 'functionality',
     description: `Ensure that properties and methods accessed from the template are public.`,
     rationale: `When Angular compiles the templates, it has to access these properties from outside the class.`,
-    options: null,
-    optionsDescription: `Not configurable.`,
+    options: {
+      type: 'array',
+      items: {
+        enum: ['protected'],
+      }
+    },
+    optionsDescription: `protected can also be allowed with the protected option`,
     typescriptOnly: true,
   };
 
